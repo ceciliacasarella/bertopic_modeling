@@ -16,7 +16,7 @@ import nltk.corpus
 np.random.seed(42)
 _inf = np.finfo(np.float64).max
 
-def create_ml_flow_experiment(client, experiment_name=None, experiment_tags=None):
+def create_ml_flow_experiment(client, experiment_name, experiment_tags):
         """
         Create a new mlflow experiment
 
@@ -61,11 +61,11 @@ def score_clusters(clusters, prob_threshold = 0.05):
     return label_count, cost
 
 def clustering_eval_mlflow(
-        tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower, label_upper, penalty, max_evals = 100,
+        tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower=5, label_upper=10, penalty=0.3, max_evals = 100,
     ):
 
         """
-        Create a new eval function
+        Create BERTtopic evaluation function with custom loss and constrained optimization of number of topics
 
         :experiment_id: Experiment unique name for the training run.
         :run_name: Define a run name for this iteration of training.
@@ -83,23 +83,27 @@ def clustering_eval_mlflow(
                   but when running a server, make sure that this points to a persistent (that is, non-ephemeral) file system location.")
             tracking_client = MlflowClient()
 
+        exp = None
         if experiment_name is None:
-            eid = mlflow.create_ml_flow_experiment(tracking_client, experiment_name, experiment_tags)       
-        else: 
-            exp = mlflow.get_experiment_by_name(experiment_name)
-
-        if not exp:
-            eid = mlflow.create_ml_flow_experiment(tracking_client, experiment_name, experiment_tags)
-        else:
-            eid = exp.experiment_id
+            raise ValueError("Please ensure an Experiment Name which must be unique and case sensitive.")
         
-        mlflow.set_experiment(experiment_name)
+        elif mlflow.get_experiment_by_name(experiment_name) is not None: 
+            exp = mlflow.get_experiment_by_name(experiment_name).experiment_id
+        else:
+            exp = create_ml_flow_experiment(client=tracking_client, 
+                                            experiment_name=experiment_name, 
+                                            experiment_tags=experiment_tags)
+
+        print("EXPE NAME: \n", experiment_name)
+        mlflow.set_experiment(experiment_id=exp)
+        print("Experiment name set on MLFlow Tracking Server: \n", experiment_name)
+        print("Experiment ID set on MLFlow Tracking Server: \n", exp)
 
         # Step1 : Embedding
         embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
         embeddings = embed(list(sentences))
 
-        def objective_function_bert(params, sentences , embeddings, label_lower, label_upper, penalty):
+        def objective_function_bert(params, eid, sentences , embeddings, label_lower, label_upper, penalty):
             """
             Objective function for hyperopt to minimize, which incorporates constraints
             on the number of clusters we want to identify
@@ -134,13 +138,11 @@ def clustering_eval_mlflow(
 
             mlflow.end_run()
             # Initiate the MLflow run context
-            with mlflow.start_run(run_name=run_name, experiment_id=eid) as run:
+            with mlflow.start_run(run_name=run_name) as run:
                 # Log the parameters used for the model fit
                 mlflow.log_params(params)
                 # Log the error metrics that were calculated during validation
                 mlflow.log_metrics(metrics)
-                # Log model
-                mlflow.transformers.log_model(transformers_model=topic_model)
 
             return {'loss': loss, 'label_count': label_count,'dbvc_score':dbcv, 'status':STATUS_OK}
 
@@ -154,6 +156,7 @@ def clustering_eval_mlflow(
 
         fmin_objective = partial(objective_function_bert, 
                                  sentences=sentences, 
+                                 eid=exp,
                                  embeddings= embeddings, 
                                  label_lower=label_lower, 
                                  label_upper=label_upper, 
@@ -167,7 +170,8 @@ def clustering_eval_mlflow(
         best_params = space_eval(bopt_space, best)
 
         # find the best run, log its metrics as the final metrics of this run.
-        runs = tracking_client.search_runs(experiment_ids=eid,
+
+        runs = MlflowClient().search_runs(experiment_ids=exp,
                                           filter_string=f"tags.`mlflow.runName` = '{run_name}'")
         
         best_loss = _inf
@@ -192,20 +196,37 @@ def clustering_eval_mlflow(
 
         return best_params, best_run
 
-label_lower = 10
-label_upper = 20
-max_evals = 50
+label_lower = 5
+label_upper = 8
+max_evals = 2
 penalty= 0.3
 run_name = "exp_umap_hdbscan_test_1"
 
 tracking_client = MlflowClient(tracking_uri="http://127.0.0.1:5000")
-experiment_name = "First-Dataset-Model"
+experiment_name = "First-Dataset-Model-17"
+
+# Provide an Experiment description that will appear in the UI
+experiment_description = (
+    "This is short-text hard clustering evaluation using umap and hdbscan."
+)
+
+# Tags
+experiment_tags = {
+    "project_name": "short-text-clustering",
+    "dataset_description": "first-experiment",
+    "mlflow.note.content": experiment_description,
+}
+
+# Create the Experiment, providing a unique name
+experiment = tracking_client.create_experiment(
+    name=experiment_name, tags=experiment_tags
+)
 
 df_json_survey = pd.read_json("C:\\Users\\Cecilia\\Downloads\\/1.json")
 
 #tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower, label_upper, penalty, max_evals = 100
 best_params, best_run = clustering_eval_mlflow(tracking_client = tracking_client, 
-                                               experiment_tags=None,
+                                                experiment_tags=None,
                                                 run_name = run_name, 
                                                 sentences = df_json_survey['text'], 
                                                 label_lower = label_lower, 
