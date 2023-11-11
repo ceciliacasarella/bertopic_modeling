@@ -77,11 +77,13 @@ def clustering_eval_mlflow(
         :return: new eval function.
         """
 
-        print("Experiment name: ", experiment_name)
-        if tracking_client == None:
+        if tracking_client is None:
+            print(f"Remember to configure an MLflow tracking server using command: mlflow server.\
+                  By default --backend-store-uri is set to the local ./mlruns directory (the same as when running mlflow run locally),\
+                  but when running a server, make sure that this points to a persistent (that is, non-ephemeral) file system location.")
             tracking_client = MlflowClient()
 
-        if experiment_name == None:
+        if experiment_name is None:
             eid = mlflow.create_ml_flow_experiment(tracking_client, experiment_name, experiment_tags)       
         else: 
             exp = mlflow.get_experiment_by_name(experiment_name)
@@ -165,11 +167,6 @@ def clustering_eval_mlflow(
         best_params = space_eval(bopt_space, best)
 
         # find the best run, log its metrics as the final metrics of this run.
-        # Use search_experiments() to search on the project_name tag key
-        # experiment_id = vars(tracking_client.search_experiments(
-        #    filter_string="tags.`project_name` = 'short-text-clustering'"
-        #)[0])['_experiment_id']
-
         runs = tracking_client.search_runs(experiment_ids=eid,
                                           filter_string=f"tags.`mlflow.runName` = '{run_name}'")
         
@@ -195,13 +192,12 @@ def clustering_eval_mlflow(
 
         return best_params, best_run
 
-label_lower = 15
-label_upper = 30
-max_evals = 20
+label_lower = 10
+label_upper = 20
+max_evals = 50
 penalty= 0.3
 run_name = "exp_umap_hdbscan_test_1"
 
-print("Start")
 tracking_client = MlflowClient(tracking_uri="http://127.0.0.1:5000")
 experiment_name = "First-Dataset-Model"
 
