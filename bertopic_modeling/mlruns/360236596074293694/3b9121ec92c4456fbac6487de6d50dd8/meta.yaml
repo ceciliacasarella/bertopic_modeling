@@ -1,0 +1,15 @@
+artifact_uri: mlflow-artifacts:/360236596074293694/3b9121ec92c4456fbac6487de6d50dd8/artifacts
+end_time: 1699726653368
+entry_point_name: ''
+experiment_id: '360236596074293694'
+lifecycle_stage: active
+run_id: 3b9121ec92c4456fbac6487de6d50dd8
+run_name: exp_umap_hdbscan_test_1
+run_uuid: 3b9121ec92c4456fbac6487de6d50dd8
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1699726653181
+status: 3
+tags: []
+user_id: Cecilia
