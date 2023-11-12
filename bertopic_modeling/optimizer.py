@@ -1,7 +1,6 @@
 import mlflow
 from mlflow.tracking import MlflowClient
 from hyperopt import fmin, tpe, hp, STATUS_OK, Trials, partial, space_eval
-from bertopic import BERTopic
 
 import numpy as np
 import pandas as pd
@@ -11,8 +10,17 @@ import tensorflow_hub as hub
 
 import umap
 import hdbscan 
-import nltk.corpus
+from nltk.corpus import stopwords
 
+nltk.download('stopwords')
+
+from bertopic import BERTopic
+from bertopic.vectorizers import ClassTfidfTransformer
+from bertopic.representation import KeyBERTInspired
+from sklearn.feature_extraction.text import CountVectorizer
+
+
+italian_stopwords = stopwords.words("italian")
 np.random.seed(42)
 _inf = np.finfo(np.float64).max
 
@@ -60,6 +68,32 @@ def score_clusters(clusters, prob_threshold = 0.05):
 
     return label_count, cost
 
+def fit_BERTopic(sentences, best_mlflow_run): 
+
+    # Step1 : Embedding
+    embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
+    # Step2 : Dimensionality Reduction
+    umap_model = umap.UMAP(n_neighbors=int(best_mlflow_run.data.params['n_neighbors']), n_components=int(best_mlflow_run.data.params['n_components']), metric='cosine', min_dist=0.0, random_state=42)
+    # Step3 : Clustering
+    hdbscan_model = hdbscan.HDBSCAN(min_cluster_size=int(best_mlflow_run.data.params['min_cluster_size']), metric='euclidean', cluster_selection_method='eom', approx_min_span_tree=False, prediction_data=True)
+    # Step4 : CountVectorizer
+    # CountVectorizer and c-TF-IDF calculation are responsible for creating the topic representations
+    # Fine-tune topic representations after training BERTopic
+    vectorizer_model = CountVectorizer(stop_words=italian_stopwords, ngram_range=(1, 4), min_df=2)
+    ctfidf_model = ClassTfidfTransformer()
+    # Topic representations
+    representation_model = KeyBERTInspired()
+    topic_model = BERTopic(
+                        embedding_model=embed,
+                        umap_model=umap_model,
+                        hdbscan_model=hdbscan_model,
+                        vectorizer_model=vectorizer_model,
+                        #ctfidf_model=ctfidf_model,
+                        representation_model=representation_model)
+    topics, probs = topic_model.fit_transform(sentences)
+    return topics, probs, topic_model
+
+
 def clustering_eval_mlflow(
         tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower=5, label_upper=10, penalty=0.3, max_evals = 100,
     ):
@@ -94,14 +128,13 @@ def clustering_eval_mlflow(
                                             experiment_name=experiment_name, 
                                             experiment_tags=experiment_tags)
 
-        print("EXPE NAME: \n", experiment_name)
         mlflow.set_experiment(experiment_id=exp)
         print("Experiment name set on MLFlow Tracking Server: \n", experiment_name)
         print("Experiment ID set on MLFlow Tracking Server: \n", exp)
 
         # Step1 : Embedding
         embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
-        embeddings = embed(list(sentences))
+        embeddings = embed(sentences)
 
         def objective_function_bert(params, eid, sentences , embeddings, label_lower, label_upper, penalty):
             """
@@ -116,7 +149,7 @@ def clustering_eval_mlflow(
                       umap_model=umap_model,
                       hdbscan_model=hdbscan_model)
             
-            topics, probs = topic_model.fit_transform(list(sentences),np.array(embeddings))
+            topics, probs = topic_model.fit_transform(sentences,np.array(embeddings))
             # Label count and cost associated with solution
             label_count, cost = score_clusters(topic_model.hdbscan_model, prob_threshold = 0.05)
             # % penalty on the cost function if outside the desired range of groups
@@ -194,16 +227,19 @@ def clustering_eval_mlflow(
         )
         """
 
-        return best_params, best_run
+        # Fit best BERTopic model
+        topics, probs, topic_model = fit_BERTopic(sentences, best_run)
+
+        return best_params, best_run, topic_model, topics
 
 label_lower = 5
 label_upper = 8
-max_evals = 2
+max_evals = 5
 penalty= 0.3
 run_name = "exp_umap_hdbscan_test_1"
 
 tracking_client = MlflowClient(tracking_uri="http://127.0.0.1:5000")
-experiment_name = "First-Dataset-Model-17"
+experiment_name = "First-Dataset-Model-1"
 
 # Provide an Experiment description that will appear in the UI
 experiment_description = (
@@ -225,12 +261,19 @@ experiment = tracking_client.create_experiment(
 df_json_survey = pd.read_json("C:\\Users\\Cecilia\\Downloads\\/1.json")
 
 #tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower, label_upper, penalty, max_evals = 100
-best_params, best_run = clustering_eval_mlflow(tracking_client = tracking_client, 
+best_params, best_run, topic_model, topics = clustering_eval_mlflow(tracking_client = tracking_client, 
                                                 experiment_tags=None,
                                                 run_name = run_name, 
-                                                sentences = df_json_survey['text'], 
+                                                sentences = list(df_json_survey['text']), 
                                                 label_lower = label_lower, 
                                                 label_upper = label_upper, 
                                                 penalty = penalty, 
                                                 max_evals = max_evals,
                                                 experiment_name = experiment_name)
+
+topic_model.visualize_barchart()
+topic_model.get_topic_info()
+topic_model.visualize_documents(list(df_json_survey['text']))
+topic_model.visualize_topics()
+topic_model.visualize_heatmap()
+print(topics)
