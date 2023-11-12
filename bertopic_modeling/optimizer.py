@@ -4,14 +4,14 @@ from hyperopt import fmin, tpe, hp, STATUS_OK, Trials, partial, space_eval
 
 import numpy as np
 import pandas as pd
-import tensorflow_text
 import tensorflow as tf
+import tensorflow_text
 import tensorflow_hub as hub
 
 import umap
 import hdbscan 
 from nltk.corpus import stopwords
-
+import nltk
 nltk.download('stopwords')
 
 from bertopic import BERTopic
@@ -19,10 +19,31 @@ from bertopic.vectorizers import ClassTfidfTransformer
 from bertopic.representation import KeyBERTInspired
 from sklearn.feature_extraction.text import CountVectorizer
 
+import matplotlib.pyplot as plt
+
+import os
+import click
 
 italian_stopwords = stopwords.words("italian")
 np.random.seed(42)
 _inf = np.finfo(np.float64).max
+
+def build_data(file_path):
+    _, file_extension = os.path.splitext(file_path)
+
+    if file_extension == '.csv':
+        df_from_file = pd.read_csv(file_path)
+    elif file_extension == '.json':
+        df_from_file = pd.read_json(file_path)
+    else:
+        raise ValueError(f'Unsupported file extension: {file_extension}')
+
+    try:
+       df_from_file = df_from_file[df_from_file['text'].notna()]
+    except KeyError:
+        raise ValueError("The 'text' column does not exist in the file.")
+
+    return list(df_from_file['text']) 
 
 def create_ml_flow_experiment(client, experiment_name, experiment_tags):
         """
@@ -34,7 +55,7 @@ def create_ml_flow_experiment(client, experiment_name, experiment_tags):
 
         :return: new eval function.
         """
-        if experiment_tags == None:
+        if experiment_tags is None:
             # Provide an Experiment description that will appear in the UI
             experiment_description = (
                 "This is short-text hard clustering evaluation using umap and hdbscan."
@@ -68,8 +89,9 @@ def score_clusters(clusters, prob_threshold = 0.05):
 
     return label_count, cost
 
-def fit_BERTopic(sentences, best_mlflow_run): 
+def fit_BERTopic(sentences, best_mlflow_run):
 
+    print(best_mlflow_run)
     # Step1 : Embedding
     embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
     # Step2 : Dimensionality Reduction
@@ -79,7 +101,7 @@ def fit_BERTopic(sentences, best_mlflow_run):
     # Step4 : CountVectorizer
     # CountVectorizer and c-TF-IDF calculation are responsible for creating the topic representations
     # Fine-tune topic representations after training BERTopic
-    vectorizer_model = CountVectorizer(stop_words=italian_stopwords, ngram_range=(1, 4), min_df=2)
+    vectorizer_model = CountVectorizer(stop_words=italian_stopwords, ngram_range=(1, 4), min_df=1)
     ctfidf_model = ClassTfidfTransformer()
     # Topic representations
     representation_model = KeyBERTInspired()
@@ -95,7 +117,7 @@ def fit_BERTopic(sentences, best_mlflow_run):
 
 
 def clustering_eval_mlflow(
-        tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower=5, label_upper=10, penalty=0.3, max_evals = 100,
+        tracking_client, experiment_name, run_name, sentences, data_path, label_lower=5, label_upper=10, penalty=0.3, max_evals = 100,
     ):
 
         """
@@ -110,33 +132,32 @@ def clustering_eval_mlflow(
 
         :return: new eval function.
         """
+        #mlflow.set_tracking_uri("http://127.0.0.1:5000")
+
+        if sentences is None and data_path:
+            sentences = build_data(data_path)
 
         if tracking_client is None:
             print(f"Remember to configure an MLflow tracking server using command: mlflow server.\
                   By default --backend-store-uri is set to the local ./mlruns directory (the same as when running mlflow run locally),\
                   but when running a server, make sure that this points to a persistent (that is, non-ephemeral) file system location.")
-            tracking_client = MlflowClient()
+            mlflow.set_tracking_uri("http://127.0.0.1:5000")
+        else:
+            mlflow.set_tracking_uri(tracking_client)
+ 
 
-        exp = None
         if experiment_name is None:
             raise ValueError("Please ensure an Experiment Name which must be unique and case sensitive.")
-        
-        elif mlflow.get_experiment_by_name(experiment_name) is not None: 
-            exp = mlflow.get_experiment_by_name(experiment_name).experiment_id
         else:
-            exp = create_ml_flow_experiment(client=tracking_client, 
-                                            experiment_name=experiment_name, 
-                                            experiment_tags=experiment_tags)
-
-        mlflow.set_experiment(experiment_id=exp)
+            mlflow.set_experiment(experiment_name)
+        
         print("Experiment name set on MLFlow Tracking Server: \n", experiment_name)
-        print("Experiment ID set on MLFlow Tracking Server: \n", exp)
 
         # Step1 : Embedding
         embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
         embeddings = embed(sentences)
 
-        def objective_function_bert(params, eid, sentences , embeddings, label_lower, label_upper, penalty):
+        def objective_function_bert(params, sentences , embeddings, label_lower, label_upper, penalty):
             """
             Objective function for hyperopt to minimize, which incorporates constraints
             on the number of clusters we want to identify
@@ -149,7 +170,7 @@ def clustering_eval_mlflow(
                       umap_model=umap_model,
                       hdbscan_model=hdbscan_model)
             
-            topics, probs = topic_model.fit_transform(sentences,np.array(embeddings))
+            topic_model.fit_transform(sentences,np.array(embeddings))
             # Label count and cost associated with solution
             label_count, cost = score_clusters(topic_model.hdbscan_model, prob_threshold = 0.05)
             # % penalty on the cost function if outside the desired range of groups
@@ -189,7 +210,6 @@ def clustering_eval_mlflow(
 
         fmin_objective = partial(objective_function_bert, 
                                  sentences=sentences, 
-                                 eid=exp,
                                  embeddings= embeddings, 
                                  label_lower=label_lower, 
                                  label_upper=label_upper, 
@@ -203,7 +223,7 @@ def clustering_eval_mlflow(
         best_params = space_eval(bopt_space, best)
 
         # find the best run, log its metrics as the final metrics of this run.
-
+        exp = mlflow.get_experiment_by_name(experiment_name).experiment_id
         runs = MlflowClient().search_runs(experiment_ids=exp,
                                           filter_string=f"tags.`mlflow.runName` = '{run_name}'")
         
@@ -232,48 +252,81 @@ def clustering_eval_mlflow(
 
         return best_params, best_run, topic_model, topics
 
-label_lower = 5
-label_upper = 8
-max_evals = 5
-penalty= 0.3
-run_name = "exp_umap_hdbscan_test_1"
 
-tracking_client = MlflowClient(tracking_uri="http://127.0.0.1:5000")
-experiment_name = "First-Dataset-Model-1"
-
-# Provide an Experiment description that will appear in the UI
-experiment_description = (
-    "This is short-text hard clustering evaluation using umap and hdbscan."
+@click.command()
+@click.option("--experiment-name",
+    help="Experiment name.",
+    type=str,
+    default=None,
+    show_default=True
 )
-
-# Tags
-experiment_tags = {
-    "project_name": "short-text-clustering",
-    "dataset_description": "first-experiment",
-    "mlflow.note.content": experiment_description,
-}
-
-# Create the Experiment, providing a unique name
-experiment = tracking_client.create_experiment(
-    name=experiment_name, tags=experiment_tags
+@click.option("--run_name",
+    help="Run name common to all runs of this experiment.",
+    type=str,
+    default=None,
+    show_default=True
 )
+@click.option("--tracking_client",
+    help="Tracking uri if different from default one.",
+    type=str,
+    default="http://127.0.0.1:5000",
+    show_default=True
+)
+@click.option("--label_lower",
+    help="Lowerbound for K number of clusters without penalty.",
+    type=int,
+    default=5,
+    show_default=True
+)
+@click.option("--label_upper",
+    help="Lowerbound for K number of clusters without penalty.",
+    type=int,
+    default=10,
+    show_default=True
+)
+@click.option("--penalty",
+    help="Added penalty to cost function when number K of clusters is > label_upper or < label_lower",
+    type=float,
+    default=0.3,
+    show_default=True
+)
+@click.option("--max_evals",
+    help="Maximum numbers of evaluations for optimizing BERTopic model",
+    type=int,
+    default=20,
+    show_default=True
+)
+@click.option("--data_path",
+    help="Path to csv or json file containing a text column with sentences",
+    type=str,
+    default=None,
+    show_default=True
+)
+def main(data_path, tracking_client, experiment_name, run_name, label_lower, label_upper, penalty, max_evals):
+    #tracking_client, experiment_name, run_name, sentences, label_lower, label_upper, penalty, max_evals = 100
+    print("Options:")
+    for k,v in locals().items():
+        print(f"  {k}: {v}")
+    sentences = build_data(data_path)
 
-df_json_survey = pd.read_json("C:\\Users\\Cecilia\\Downloads\\/1.json")
+    _, best_run, topic_model, topics = clustering_eval_mlflow(
+                                                    tracking_client = tracking_client,
+                                                    run_name = run_name, 
+                                                    sentences = sentences, 
+                                                    data_path = data_path,
+                                                    label_lower = label_lower, 
+                                                    label_upper = label_upper, 
+                                                    penalty = penalty, 
+                                                    max_evals = max_evals,
+                                                    experiment_name = experiment_name)
 
-#tracking_client, experiment_name, experiment_tags, run_name, sentences, label_lower, label_upper, penalty, max_evals = 100
-best_params, best_run, topic_model, topics = clustering_eval_mlflow(tracking_client = tracking_client, 
-                                                experiment_tags=None,
-                                                run_name = run_name, 
-                                                sentences = list(df_json_survey['text']), 
-                                                label_lower = label_lower, 
-                                                label_upper = label_upper, 
-                                                penalty = penalty, 
-                                                max_evals = max_evals,
-                                                experiment_name = experiment_name)
+    print(topic_model.get_topic_info())
+    topic_model.visualize_barchart().show()
+    topic_model.visualize_documents(sentences).show()
+    topic_model.visualize_topics().show()
+    topic_model.visualize_heatmap().show()
+    return best_run, topic_model, topics
 
-topic_model.visualize_barchart()
-topic_model.get_topic_info()
-topic_model.visualize_documents(list(df_json_survey['text']))
-topic_model.visualize_topics()
-topic_model.visualize_heatmap()
-print(topics)
+
+if __name__ == "__main__":
+   main()
