@@ -89,11 +89,7 @@ def score_clusters(clusters, prob_threshold = 0.05):
 
     return label_count, cost
 
-def fit_BERTopic(sentences, best_mlflow_run):
-
-    print(best_mlflow_run)
-    # Step1 : Embedding
-    embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
+def fit_BERTopic(sentences, best_mlflow_run, embeddings):
     # Step2 : Dimensionality Reduction
     umap_model = umap.UMAP(n_neighbors=int(best_mlflow_run.data.params['n_neighbors']), n_components=int(best_mlflow_run.data.params['n_components']), metric='cosine', min_dist=0.0, random_state=42)
     # Step3 : Clustering
@@ -106,13 +102,12 @@ def fit_BERTopic(sentences, best_mlflow_run):
     # Topic representations
     representation_model = KeyBERTInspired()
     topic_model = BERTopic(
-                        embedding_model=embed,
                         umap_model=umap_model,
                         hdbscan_model=hdbscan_model,
                         vectorizer_model=vectorizer_model,
                         #ctfidf_model=ctfidf_model,
                         representation_model=representation_model)
-    topics, probs = topic_model.fit_transform(sentences)
+    topics, probs = topic_model.fit_transform(sentences,embeddings)
     return topics, probs, topic_model
 
 
@@ -248,7 +243,7 @@ def clustering_eval_mlflow(
         """
 
         # Fit best BERTopic model
-        topics, probs, topic_model = fit_BERTopic(sentences, best_run)
+        topics, probs, topic_model = fit_BERTopic(sentences, best_run, np.array(embeddings))
 
         return best_params, best_run, topic_model, topics
 
@@ -323,7 +318,7 @@ def main(data_path, tracking_client, experiment_name, run_name, label_lower, lab
     print(topic_model.get_topic_info())
     topic_model.visualize_barchart().show()
     topic_model.visualize_documents(sentences).show()
-    topic_model.visualize_topics().show()
+    #topic_model.visualize_topics().show()
     topic_model.visualize_heatmap().show()
     return best_run, topic_model, topics
 
