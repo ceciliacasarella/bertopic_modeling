@@ -90,6 +90,7 @@ def score_clusters(clusters, prob_threshold = 0.05):
     return label_count, cost
 
 def fit_BERTopic(sentences, best_mlflow_run, embeddings):
+    print(best_mlflow_run)
     # Step1 : Embedding
     embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
     # Step2 : Dimensionality Reduction
@@ -319,10 +320,6 @@ def main(data_path, tracking_client, experiment_name, run_name, label_lower, lab
                                                     experiment_name = experiment_name)
 
     print(topic_model.get_topic_info())
-    topic_model.visualize_barchart().show()
-    topic_model.visualize_documents(sentences).show()
-    #topic_model.visualize_topics().show()
-    topic_model.visualize_heatmap().show()
     return best_run, topic_model, topics
 
 
