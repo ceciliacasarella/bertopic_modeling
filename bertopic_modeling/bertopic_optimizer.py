@@ -4,7 +4,6 @@ from hyperopt import fmin, tpe, hp, STATUS_OK, Trials, partial, space_eval
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import tensorflow_text
 import tensorflow_hub as hub
 
@@ -236,20 +235,12 @@ def clustering_eval_mlflow(
         mlflow.set_tag("best_run", best_run.info.run_id)
         mlflow.set_tag("best params", str(best_params))
 
-        """
-        mlflow.log_metrics(
-            {
-                "Loss": best_run.data.metrics["loss"],
-                "Label_count": best_run.data.metrics["label_count"],
-                "Dbcv": best_run.data.metrics["dbvc_score"],
-            }
-        )
-        """
-
         # Fit best BERTopic model
         topics, probs, topic_model = fit_BERTopic(sentences, best_run, np.array(embeddings))
+        sentence_topic_df = pd.DataFrame({'text': sentences, 'topic': topics})
 
-        return best_params, best_run, topic_model, topics
+
+        return topic_model, sentence_topic_df
 
 
 @click.command()
@@ -308,7 +299,7 @@ def main(data_path, tracking_client, experiment_name, run_name, label_lower, lab
         print(f"  {k}: {v}")
     sentences = build_data(data_path)
 
-    _, best_run, topic_model, topics = clustering_eval_mlflow(
+    topic_model, sentence_topic_df = clustering_eval_mlflow(
                                                     tracking_client = tracking_client,
                                                     run_name = run_name, 
                                                     sentences = sentences, 
@@ -320,7 +311,7 @@ def main(data_path, tracking_client, experiment_name, run_name, label_lower, lab
                                                     experiment_name = experiment_name)
 
     print(topic_model.get_topic_info())
-    return best_run, topic_model, topics
+    return topic_model, sentence_topic_df
 
 
 if __name__ == "__main__":
