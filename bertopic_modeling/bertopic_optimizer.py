@@ -180,13 +180,10 @@ def clustering_eval_mlflow(
             loss = cost + penalty
 
             #Metrics
-            umap_embeddings = np.array(topic_model.umap_model.embedding_, dtype=np.double)
-            dbcv = hdbscan.validity_index(umap_embeddings,topic_model.hdbscan_model.labels_)
             metrics = {
                       'label_count': label_count,
-                      'loss': loss,                     
-                      'dbvc_score':dbcv
-                      }
+                      'loss': loss                  
+                    }
 
             mlflow.end_run()
             # Initiate the MLflow run context
@@ -196,7 +193,7 @@ def clustering_eval_mlflow(
                 # Log the error metrics that were calculated during validation
                 mlflow.log_metrics(metrics)
 
-            return {'loss': loss, 'label_count': label_count,'dbvc_score':dbcv, 'status':STATUS_OK}
+            return {'loss': loss, 'label_count': label_count,'status':STATUS_OK}
 
 
         bopt_space = {
