@@ -36,7 +36,7 @@ Install this module using
 
 `pip install git+https://github.com/ceciliacasarella/bertopic_modeling.git`
 
-**Start the mlflow tracking server**[mlflow-doc]("https://mlflow.org/docs/latest/tracking.html")
+**Start the mlflow tracking server** [mlflow-doc]("https://mlflow.org/docs/latest/tracking.html")
 
 `mlflow server`
 
