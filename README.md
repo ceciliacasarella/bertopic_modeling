@@ -24,10 +24,12 @@ As part of this work a cost function suitable for hdbscan clusters was implement
 Therefore the cost of a clustering solution is calculated as:
 > Cost = percent of dataset with < 5% cluster label confidence
 
-We also added a constraint by applying a penalty to the cost function in case of violation. The number of **K clusters** is automatically detected by searching the optimum in the function described above subject to the fact that the number of clusters must be in the interval provided by the user.
+A **constraint** was added by applying a penalty to the cost function in case of violation. The number of **K clusters** is automatically detected by searching the optimum in the function described above subject to the fact that the number of clusters must be in the interval provided by the user.
 
 So if the solution is optimal with respect to the cost function but the identified number of clusters is outside the specified interval then the algorithm searches for a suitable solution in the user-defined constrained space.
-This ensures that the clustering solution is effective in the number of clusters identified by inserting domain knowledge in the search space.
+This ensures that the clustering solution is effective in the identified number of clusters by inserting domain knowledge in the search space.
+
+The hyperopt function works by defining an objective function that we want to minimize (the cost function above). The optimization constraints are included within the objective function by adding a penalty term if the number of clusters falls outside of the desired range. 
 
 ## Setup
 Install this module using
