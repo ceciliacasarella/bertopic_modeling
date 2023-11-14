@@ -8,7 +8,7 @@ The BERTopic pipeline allows to easily build a topic modeling pipeline creating 
 The steps chosen in the context of this work were:
   1. Google’s Universal Sentence Encoder (USE), first published by Cer et al in 2018, which is a popular sentence embedding model that performs well on sentence semantic similarity tasks within one language or multiple languages. Its multilingual version was trained on italian corpus.
   2. UMAP for reducing deìimensionality of embeddings.
-  3. HDBSCAN as density-based algorithm and it doed not require specifying the number of clusters upfront is indifferent to cluster shape.
+  3. HDBSCAN as density-based algorithm which does not require specifying the number of clusters upfront and it is effective in discovering arbitrarily-shaped clusters.
   4. CountVectorizer
   5. KeyBERTInspired representation model which performs fine-tuning based on the semantic relationship between keywords/keyphrases and the set of documents in each topic.
 
@@ -16,6 +16,18 @@ UMAP has several hyperparameters that control how it performs dimensionality red
 
 HDBSCAN also has several important hyperparameters, but the most important one to consider is **min_cluster_size**. Intuitively, this controls the smallest grouping you want to consider as a cluster. 
 
+## Hyper-parameters Optimization
+
+**HyperOpt** is an open-source python package that uses an algorithm called Tree-based Parzen Esimtors (TPE) to select model hyperparameters which optimize a user-defined objective function.
+
+As part of this work a cost function suitable for hdbscan clusters was implemented. The cost function of the clustering solution takes into account the **probabilities_** HDBSCAN attribute which is defined in the documentation as *The strength with which each sample is a member of its assigned cluster. Noise points have probability zero; points in clusters have values assigned proportional to the degree that they persist as part of the cluster.*
+Therefore the cost of a clustering solution is calculated as:
+> Cost = percent of dataset with < 5% cluster label confidence
+
+We also added a constraint by applying a penalty to the cost function in case of violation. The number of **K clusters** is automatically detected by searching the optimum in the function described above subject to the fact that the number of clusters must be in the interval provided by the user.
+
+So if the solution is optimal with respect to the cost function but the identified number of clusters is outside the specified interval then the algorithm searches for a suitable solution in the user-defined constrained space.
+This ensures that the clustering solution is effective in the number of clusters identified by inserting domain knowledge in the search space.
 
 ## Setup
 Install this module using
@@ -32,5 +44,5 @@ By default, the MLflow Python API logs runs locally to files in an mlruns direct
 
 `python bertopic_optimizer.py --experiment-name BERT_Topic_exp --run_name bert-topic-first-exp-1  --tracking_client http://127.0.0.1:5000 --label_lower 5 --label_upper 15 --penalty 0.3 --max_evals 1 --data_path C:\\path-to-file`
 
-
+## Future Work
 
