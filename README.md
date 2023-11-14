@@ -47,6 +47,7 @@ By default, the MLflow Python API logs runs locally to files in an mlruns direct
 
 `python bertopic_optimizer.py --experiment-name BERT_Topic_exp --run_name bert-topic-first-exp-1  --tracking_client http://127.0.0.1:5000 --label_lower 5 --label_upper 15 --penalty 0.3 --max_evals 1 --data_path C:\\path-to-file`
 
+Plese refer to the Python notebook in this folder to see concrete examples with effective visualization for qualitative validation.
 ## Future Work
 
 - Define new metric of "meaningful" clusters and possibly new cost function to train Bayesian optimization like constraining variance of the embeddings insidec a cluster.
