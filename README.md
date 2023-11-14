@@ -20,7 +20,8 @@ HDBSCAN also has several important hyperparameters, but the most important one t
 
 **HyperOpt** is an open-source python package that uses an algorithm called Tree-based Parzen Esimtors (TPE) to select model hyperparameters which optimize a user-defined objective function.
 
-As part of this work a cost function suitable for hdbscan clusters was implemented. The cost function of the clustering solution takes into account the **probabilities_** HDBSCAN attribute which is defined in the documentation as *The strength with which each sample is a member of its assigned cluster. Noise points have probability zero; points in clusters have values assigned proportional to the degree that they persist as part of the cluster.*
+As part of this work a cost function suitable for hdbscan clusters was implemented. The cost function of the clustering solution takes into account the **probabilities_** HDBSCAN attribute which is defined in the documentation as 
+> *The strength with which each sample is a member of its assigned cluster. Noise points have probability zero; points in clusters have values assigned proportional to the degree that they persist as part of the cluster.*
 Therefore the cost of a clustering solution is calculated as:
 > Cost = percent of dataset with < 5% cluster label confidence
 
@@ -48,3 +49,7 @@ By default, the MLflow Python API logs runs locally to files in an mlruns direct
 
 ## Future Work
 
+- Define new metric of "meaningful" clusters and possibly new cost function to train Bayesian optimization like constraining variance of the embeddings insidec a cluster.
+- Explore different sentence embedding algorithms like [sentence-BERT models](https://www.sbert.net/docs/pretrained_models.html) in particular Multi-Lingual Models (e.g. **distiluse-base-multilingual-cased-v2**,**paraphrase-multilingual-MiniLM-L12-v2**).
+- Add more internal cluster evaluation metrics
+- Try different approach like **Advanced-Zero-Shot-Topic-Classification-for-Textual-Data** trying to classify short text by using pre-defined topics, see [example](https://github.com/ritikas20/Advanced-Zero-Shot-Topic-Classification-for-Textual-Data/blob/main/Advanced%20Zero-Shot%20Topic%20Classification%20for%20Textual%20Data.ipynb)
